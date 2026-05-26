@@ -1,0 +1,14 @@
+services:
+  app:
+    image: ghcr.io/estelarriwi/novapass_ticketoffice:latest
+    pull_policy: always
+    env_file:
+      - .env
+    volumes:
+      - app-storage:/var/www/storage
+    ports:
+      - "9002:9000"
+    restart: unless-stopped
+
+volumes:
+  app-storage:
