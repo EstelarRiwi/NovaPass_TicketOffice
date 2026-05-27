@@ -39,8 +39,9 @@ export const api = {
 
 export async function downloadTicketPdf(ticketId: string): Promise<void> {
   const token = getToken()
+  if (!token) throw new Error('No autenticado')
   const res = await fetch(`${API_BASE}/tickets/${ticketId}/pdf`, {
-    headers: { Authorization: `Bearer ${token ?? ''}` },
+    headers: { Authorization: `Bearer ${token}` },
   })
   if (!res.ok) throw new Error('Error al descargar PDF')
   const blob = await res.blob()
