@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from './context/AuthContext'
 import Login from './pages/Login'
 import SaleForm from './pages/SaleForm'
 import TicketConfirmation from './pages/TicketConfirmation'
+import NotFound from './pages/NotFound'
 import './styles/global.css'
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -18,7 +19,7 @@ function AppRoutes() {
       <Route path="/login" element={user ? <Navigate to="/" replace /> : <Login />} />
       <Route path="/" element={<ProtectedRoute><SaleForm /></ProtectedRoute>} />
       <Route path="/confirmation" element={<ProtectedRoute><TicketConfirmation /></ProtectedRoute>} />
-      <Route path="*" element={<Navigate to="/" replace />} />
+      <Route path="*" element={<NotFound />} />
     </Routes>
   )
 }
