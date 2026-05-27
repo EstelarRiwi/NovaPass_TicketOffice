@@ -1,4 +1,5 @@
 const API_BASE = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:5000/api'
+let redirecting = false
 
 function getToken(): string | null {
   return localStorage.getItem('token')
@@ -16,9 +17,12 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
   })
 
   if (res.status === 401) {
-    localStorage.removeItem('token')
-    localStorage.removeItem('user')
-    window.location.href = '/login'
+    if (!redirecting) {
+      redirecting = true
+      localStorage.removeItem('token')
+      localStorage.removeItem('user')
+      window.location.href = '/login'
+    }
     throw new Error('No autorizado')
   }
 
