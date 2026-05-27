@@ -36,6 +36,7 @@ export default function TicketConfirmation() {
 
   useEffect(() => {
     if (!sale) navigate('/', { replace: true })
+    else window.history.replaceState({}, document.title)
   }, [sale, navigate])
 
   if (!sale) return null
