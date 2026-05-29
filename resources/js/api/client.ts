@@ -5,6 +5,19 @@ function getToken(): string | null {
   return localStorage.getItem('token')
 }
 
+function isTokenExpired(): boolean {
+  const token = getToken()
+  if (!token) return true
+  try {
+    const parts = token.split('.')
+    if (parts.length !== 3) return true
+    const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')))
+    return !payload.exp || payload.exp * 1000 < Date.now()
+  } catch {
+    return true
+  }
+}
+
 async function request<T>(method: string, path: string, body?: unknown): Promise<T> {
   const token = getToken()
   const res = await fetch(`${API_BASE}${path}`, {
@@ -16,7 +29,7 @@ async function request<T>(method: string, path: string, body?: unknown): Promise
     ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   })
 
-  if (res.status === 401) {
+  if (res.status === 401 && isTokenExpired()) {
     if (!redirecting) {
       redirecting = true
       localStorage.removeItem('token')
