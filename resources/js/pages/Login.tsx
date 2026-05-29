@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useAuth } from '../context/AuthContext'
-import { LogIn, Shield, ShoppingBag, Zap } from 'lucide-react'
+import { LogIn, ShoppingBag, Tag, Zap } from 'lucide-react'
 
 export default function Login() {
   const { login, loading } = useAuth()
@@ -29,28 +29,26 @@ export default function Login() {
       overflow: 'hidden',
       padding: '2rem 1.5rem',
     }}>
-      {/* Glow orbs */}
       <div style={{
         position: 'absolute', width: 600, height: 600, borderRadius: '50%',
-        background: 'radial-gradient(circle, rgba(147, 51, 234, 0.18) 0%, transparent 70%)',
+        background: 'radial-gradient(circle, rgba(147, 51, 234, 0.2) 0%, transparent 70%)',
         top: -200, right: -180, pointerEvents: 'none',
         animation: 'float 9s ease-in-out infinite',
       }} />
       <div style={{
-        position: 'absolute', width: 420, height: 420, borderRadius: '50%',
-        background: 'radial-gradient(circle, rgba(245, 158, 11, 0.1) 0%, transparent 70%)',
+        position: 'absolute', width: 400, height: 400, borderRadius: '50%',
+        background: 'radial-gradient(circle, rgba(245, 158, 11, 0.09) 0%, transparent 70%)',
         bottom: -120, left: -100, pointerEvents: 'none',
         animation: 'float-reverse 12s ease-in-out infinite',
       }} />
       <div style={{
-        position: 'absolute', width: 300, height: 300, borderRadius: '50%',
-        background: 'radial-gradient(circle, rgba(147, 51, 234, 0.08) 0%, transparent 70%)',
-        bottom: '35%', right: '8%', pointerEvents: 'none',
-        animation: 'float 15s ease-in-out infinite 4s',
+        position: 'absolute', width: 280, height: 280, borderRadius: '50%',
+        background: 'radial-gradient(circle, rgba(147, 51, 234, 0.1) 0%, transparent 70%)',
+        bottom: '30%', right: '10%', pointerEvents: 'none',
+        animation: 'float 14s ease-in-out infinite 3s',
       }} />
 
       <div style={{ width: '100%', maxWidth: 420, position: 'relative', zIndex: 1 }} className="slide-in-up">
-        {/* Logo */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem', marginBottom: '2.5rem' }}>
           <div style={{
             display: 'inline-flex', alignItems: 'center', gap: '0.625rem',
@@ -61,24 +59,19 @@ export default function Login() {
             <Zap size={30} fill="currentColor" />
             NovaPass
           </div>
-
           <div style={{
             display: 'inline-flex', alignItems: 'center', gap: '0.5rem',
             background: 'rgba(147, 51, 234, 0.1)',
             border: '1px solid rgba(147, 51, 234, 0.25)',
-            borderRadius: '999px',
-            padding: '0.375rem 0.875rem',
-            fontSize: '0.75rem',
-            color: 'var(--color-text-muted)',
-            letterSpacing: '0.05em',
-            textTransform: 'uppercase' as const,
+            borderRadius: '999px', padding: '0.375rem 0.875rem',
+            fontSize: '0.75rem', color: 'var(--color-text-muted)',
+            letterSpacing: '0.05em', textTransform: 'uppercase' as const,
           }}>
-            <Shield size={12} />
+            <ShoppingBag size={12} />
             Punto de Venta
           </div>
         </div>
 
-        {/* Card */}
         <div className="card" style={{ padding: '2rem 2rem 1.75rem' }}>
           <h2 style={{
             textAlign: 'center', fontSize: '1.375rem', marginBottom: '1.75rem',
@@ -131,7 +124,6 @@ export default function Login() {
               }
             </button>
           </form>
-
         </div>
 
         <p style={{
@@ -139,7 +131,7 @@ export default function Login() {
           color: 'var(--color-text-muted)',
           display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.375rem',
         }}>
-          <ShoppingBag size={13} />
+          <Tag size={13} />
           Solo para vendedores autorizados de Estelar
         </p>
       </div>
