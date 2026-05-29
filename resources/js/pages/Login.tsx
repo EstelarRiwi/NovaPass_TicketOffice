@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext'
 import { LogIn, Shield, ShoppingBag, Zap } from 'lucide-react'
 
 export default function Login() {
-  const { login, demoLogin, loading } = useAuth()
+  const { login, loading } = useAuth()
   const [email, setEmail]       = useState('')
   const [password, setPassword] = useState('')
   const [error, setError]       = useState('')
@@ -132,25 +132,6 @@ export default function Login() {
             </button>
           </form>
 
-          <div style={{
-            display: 'flex', alignItems: 'center', gap: '1rem',
-            margin: '1.5rem 0', fontSize: '0.8125rem', color: 'var(--color-text-muted)',
-          }}>
-            <hr className="divider" style={{ flex: 1, margin: 0 }} />
-            <span>o</span>
-            <hr className="divider" style={{ flex: 1, margin: 0 }} />
-          </div>
-
-          <button
-            type="button"
-            onClick={demoLogin}
-            disabled={loading}
-            className="btn btn-outline"
-            style={{ width: '100%', gap: '0.625rem' }}
-          >
-            <Zap size={16} style={{ color: 'var(--color-cta)' }} />
-            Modo demo
-          </button>
         </div>
 
         <p style={{

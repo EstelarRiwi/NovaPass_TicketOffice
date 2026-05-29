@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { useAuth, DEMO_TOKEN } from '../context/AuthContext'
+import { useAuth } from '../context/AuthContext'
 import { api } from '../api/client'
 import {
   Search, X, User, Users, LogOut, Zap, ShoppingCart,
@@ -34,37 +34,6 @@ interface Ticket {
   id: string
 }
 
-// ── Demo data ─────────────────────────────────────────────────────────────────
-
-const DEMO_EVENTS: Event[] = [
-  {
-    id: '1',
-    name: 'Concierto Sinfónico de Verano',
-    date: '2026-06-15T20:00:00',
-    venue: 'Teatro Nacional',
-    categories: [
-      { id: 'vip-1',  name: 'VIP',     price: 150000, available: 50  },
-      { id: 'palco-1', name: 'Palco',  price: 80000,  available: 100 },
-      { id: 'gen-1',  name: 'General', price: 45000,  available: 300 },
-    ],
-  },
-  {
-    id: '2',
-    name: 'Obra: La Tempestad',
-    date: '2026-06-22T19:30:00',
-    venue: 'Sala Experimental',
-    categories: [
-      { id: 'pref-2', name: 'Preferencial', price: 60000, available: 80  },
-      { id: 'gen-2',  name: 'General',      price: 35000, available: 200 },
-    ],
-  },
-]
-
-const DEMO_CUSTOMERS: Record<string, Customer> = {
-  'demo@test.com': { id: 'u1', name: 'María García', email: 'demo@test.com' },
-  '12345678':      { id: 'u2', name: 'Carlos López', email: 'carlos@test.com' },
-}
-
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 const formatPrice = (n: number) =>
@@ -83,7 +52,6 @@ type CustomerState = 'idle' | 'searching' | 'found' | 'not_found' | 'guest'
 export default function SaleForm() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
-  const isDemo = localStorage.getItem('token') === DEMO_TOKEN
 
   // Customer
   const [query, setQuery]               = useState('')
@@ -116,12 +84,8 @@ export default function SaleForm() {
   useEffect(() => {
     const load = async () => {
       try {
-        if (isDemo) {
-          setEvents(DEMO_EVENTS)
-        } else {
-          const data = await api.get<Event[]>('/events')
-          setEvents(data)
-        }
+        const data = await api.get<Event[]>('/events')
+        setEvents(data)
       } catch {
         setEvents([])
       } finally {
@@ -129,19 +93,13 @@ export default function SaleForm() {
       }
     }
     load()
-  }, [isDemo])
+  }, [])
 
   // Customer search — debounced
   const performSearch = useCallback(async (q: string) => {
     setCustomerState('searching')
     try {
-      let result: Customer | null = null
-      if (isDemo) {
-        await new Promise(r => setTimeout(r, 500))
-        result = DEMO_CUSTOMERS[q.toLowerCase()] ?? null
-      } else {
-        result = await api.get<Customer | null>(`/users/search?q=${encodeURIComponent(q)}`)
-      }
+      const result = await api.get<Customer | null>(`/users/search?q=${encodeURIComponent(q)}`)
       if (result) {
         setFoundCustomer(result)
         setCustomerState('found')
@@ -151,7 +109,7 @@ export default function SaleForm() {
     } catch {
       setCustomerState('not_found')
     }
-  }, [isDemo])
+  }, [])
 
   useEffect(() => {
     if (query.trim().length < 3) return
@@ -202,17 +160,11 @@ export default function SaleForm() {
             }),
       }
 
-      let ticketId = 'demo-ticket-001'
-      if (!isDemo) {
-        const ticket = await api.post<Ticket>('/tickets/sell', payload)
-        ticketId = ticket.id
-      } else {
-        await new Promise(r => setTimeout(r, 800))
-      }
+      const ticket = await api.post<Ticket>('/tickets/sell', payload)
 
       navigate('/confirmation', {
         state: {
-          ticket_id: ticketId,
+          ticket_id: ticket.id,
           customer_name: customerState === 'found' ? foundCustomer!.name : guestName.trim(),
           customer_email: customerState === 'found'
             ? foundCustomer!.email
@@ -357,11 +309,6 @@ export default function SaleForm() {
                   Ingresa correo o número de cédula (mín. 3 caracteres)
                 </div>
               </div>
-              {isDemo && (
-                <div className="badge badge-primary">
-                  Demo: prueba "demo@test.com" o "12345678"
-                </div>
-              )}
             </div>
           )}
 
