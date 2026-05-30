@@ -53,8 +53,7 @@ export default function Login() {
           <div style={{
             display: 'inline-flex', alignItems: 'center', gap: '0.625rem',
             fontFamily: 'var(--font-heading)', fontSize: '2.25rem',
-            color: 'var(--color-primary-light)',
-            textShadow: '0 0 40px rgba(192, 132, 252, 0.55)',
+            color: 'var(--color-primary)',
           }}>
             <Zap size={30} fill="currentColor" />
             NovaPass
