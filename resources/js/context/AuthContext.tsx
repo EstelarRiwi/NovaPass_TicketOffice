@@ -31,9 +31,10 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (res.user.role !== 'seller') {
         throw new Error('Acceso solo para vendedores autorizados')
       }
+      const mappedUser: User = { ...res.user, name: (res.user as any).fullName ?? res.user.name ?? '' }
       localStorage.setItem('token', res.token)
-      localStorage.setItem('user', JSON.stringify(res.user))
-      setUser(res.user)
+      localStorage.setItem('user', JSON.stringify(mappedUser))
+      setUser(mappedUser)
     } finally {
       setLoading(false)
     }

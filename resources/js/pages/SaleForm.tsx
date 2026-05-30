@@ -42,8 +42,8 @@ const formatPrice = (n: number) =>
 const formatDate = (d: string) =>
   new Date(d).toLocaleDateString('es-CO', { weekday: 'short', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })
 
-const initials = (name: string) =>
-  name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)
+const initials = (name: string | undefined) =>
+  (name ?? '?').split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
