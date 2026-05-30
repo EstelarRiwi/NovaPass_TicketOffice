@@ -87,12 +87,12 @@ export default function SaleForm() {
         const res = await api.get<any>('/events')
         const raw: any[] = res?.data?.events ?? res?.events ?? (Array.isArray(res) ? res : [])
         const mapped: Event[] = raw.map((e: any) => ({
-          id: e.id,
+          id: String(e.id).trim(),
           name: e.title ?? e.name ?? '',
           date: e.date ?? e.eventDate ?? '',
           venue: e.venue,
           categories: (e.categories ?? e.ticketCategories ?? []).map((c: any) => ({
-            id: c.id,
+            id: String(c.id).trim(),
             name: c.name,
             price: c.price,
             available: c.available ?? c.availableCapacity ?? 0,
@@ -115,7 +115,7 @@ export default function SaleForm() {
       const res = await api.get<any>(`/users/search?q=${encodeURIComponent(q)}`)
       const raw = res?.data ?? res
       if (raw && raw.id) {
-        setFoundCustomer({ id: raw.id, name: raw.name ?? raw.fullName ?? '', email: raw.email })
+        setFoundCustomer({ id: String(raw.id).trim(), name: raw.name ?? raw.fullName ?? '', email: raw.email })
         setCustomerState('found')
       } else {
         setCustomerState('not_found')
