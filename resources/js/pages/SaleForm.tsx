@@ -84,8 +84,21 @@ export default function SaleForm() {
   useEffect(() => {
     const load = async () => {
       try {
-        const data = await api.get<Event[]>('/events')
-        setEvents(data)
+        const res = await api.get<any>('/events')
+        const raw: any[] = res?.data?.events ?? res?.events ?? (Array.isArray(res) ? res : [])
+        const mapped: Event[] = raw.map((e: any) => ({
+          id: e.id,
+          name: e.title ?? e.name ?? '',
+          date: e.date ?? e.eventDate ?? '',
+          venue: e.venue,
+          categories: (e.categories ?? e.ticketCategories ?? []).map((c: any) => ({
+            id: c.id,
+            name: c.name,
+            price: c.price,
+            available: c.available ?? c.availableCapacity ?? 0,
+          })),
+        }))
+        setEvents(mapped)
       } catch {
         setEvents([])
       } finally {
@@ -99,9 +112,10 @@ export default function SaleForm() {
   const performSearch = useCallback(async (q: string) => {
     setCustomerState('searching')
     try {
-      const result = await api.get<Customer | null>(`/users/search?q=${encodeURIComponent(q)}`)
-      if (result) {
-        setFoundCustomer(result)
+      const res = await api.get<any>(`/users/search?q=${encodeURIComponent(q)}`)
+      const raw = res?.data ?? res
+      if (raw && raw.id) {
+        setFoundCustomer({ id: raw.id, name: raw.name ?? raw.fullName ?? '', email: raw.email })
         setCustomerState('found')
       } else {
         setCustomerState('not_found')
@@ -149,22 +163,24 @@ export default function SaleForm() {
     setSaleError('')
     try {
       const payload = {
-        event_id: selectedEvent.id,
-        category_id: selectedCategory.id,
+        eventId: selectedEvent.id,
+        categoryId: selectedCategory.id,
         quantity,
+        seatId: null,
         ...(customerState === 'found' && foundCustomer
-          ? { user_id: foundCustomer.id }
+          ? { buyerUserId: foundCustomer.id, buyerName: foundCustomer.name, buyerEmail: foundCustomer.email }
           : {
-              guest_name: guestName.trim(),
-              ...(guestEmail.trim() ? { guest_email: guestEmail.trim() } : {}),
+              buyerName: guestName.trim(),
+              ...(guestEmail.trim() ? { buyerEmail: guestEmail.trim() } : {}),
             }),
       }
 
-      const ticket = await api.post<Ticket>('/tickets/sell', payload)
+      const res = await api.post<any>('/tickets/presential', payload)
+      const ticketId = res?.data?.id ?? res?.id ?? ''
 
       navigate('/confirmation', {
         state: {
-          ticket_id: ticket.id,
+          ticket_id: ticketId,
           customer_name: customerState === 'found' ? foundCustomer!.name : guestName.trim(),
           customer_email: customerState === 'found'
             ? foundCustomer!.email
