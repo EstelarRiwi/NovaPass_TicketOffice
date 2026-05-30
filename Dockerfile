@@ -33,6 +33,7 @@ COPY public/index.php public/
 COPY public/.htaccess public/
 COPY public/favicon.ico public/
 COPY public/robots.txt public/
+COPY public/sw.js public/
 
 RUN ln -s /var/www/storage/app/public /var/www/public/storage \
     && mkdir -p bootstrap/cache storage/framework/{cache,sessions,views} storage/logs \
