@@ -292,14 +292,14 @@ export default function SaleForm() {
       .then(res => {
         const raw: any[] = res?.data?.events ?? res?.events ?? (Array.isArray(res) ? res : [])
         setEvents(raw.map((e: any) => ({
-          id: String(e.id),
+          id: String(e.id).trim(),
           name: e.title ?? e.name ?? '',
           date: e.date ?? e.eventDate ?? '',
           venue: e.venue,
           city: e.city,
           image: e.imageUrl ?? e.image_url ?? e.image ?? null,
           categories: (e.categories ?? e.ticketCategories ?? []).map((c: any) => ({
-            id: String(c.id),
+            id: String(c.id).trim(),
             name: c.name,
             price: c.price,
             available: c.available ?? c.availableCapacity ?? 0,
@@ -318,7 +318,7 @@ export default function SaleForm() {
       const raw = res?.data ?? res
       if (raw && raw.id) {
         setSearchResults([{
-          id: String(raw.id),
+          id: String(raw.id).trim(),
           name: raw.name ?? raw.fullName ?? '',
           email: raw.email,
           cc: raw.cedula ?? raw.cc,
