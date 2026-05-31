@@ -297,7 +297,7 @@ export default function SaleForm() {
           date: e.date ?? e.eventDate ?? '',
           venue: e.venue,
           city: e.city,
-          image: e.image ?? e.imageUrl,
+          image: e.imageUrl ?? e.image_url ?? e.image ?? null,
           categories: (e.categories ?? e.ticketCategories ?? []).map((c: any) => ({
             id: String(c.id),
             name: c.name,
@@ -545,8 +545,9 @@ export default function SaleForm() {
                       <div
                         className="img"
                         style={{
-                          backgroundImage: e.image ? `url(${e.image})` : undefined,
-                          background: !e.image ? 'linear-gradient(135deg, var(--color-primary-dark), var(--color-primary))' : undefined,
+                          backgroundImage: e.image
+                            ? `url(${e.image})`
+                            : 'linear-gradient(135deg, var(--color-primary-dark), var(--color-primary))',
                         }}
                       >
                         <div className="date">
