@@ -1,195 +1,387 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
+import { useTheme } from '../hooks/useTheme'
+import { useAvailability } from '../hooks/useAvailability'
+import { useNotifications } from '../hooks/useNotifications'
 import { api } from '../api/client'
 import {
-  Search, X, User, Users, LogOut, Zap, ShoppingCart,
-  Minus, Plus, UserX, ChevronDown, AlertCircle,
+  Search, X, User, LogOut, Star, ShoppingCart,
+  Minus, Plus, Check, Ticket, MapPin, Music, CreditCard,
+  Banknote, QrCode, Moon, Sun,
 } from 'lucide-react'
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-interface Customer {
-  id: string
-  name: string
-  email: string
-}
-
-interface Category {
-  id: string
-  name: string
-  price: number
-  available: number
-}
-
-interface Event {
-  id: string
-  name: string
-  date: string
-  venue?: string
-  categories: Category[]
-}
-
-interface Ticket {
-  id: string
-}
+interface Customer { id: string; name: string; email: string; cc?: string; city?: string }
+interface Category { id: string; name: string; price: number; available: number }
+interface Event { id: string; name: string; date: string; venue?: string; city?: string; image?: string; categories: Category[] }
+interface CartItem extends Category { n: number }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-const formatPrice = (n: number) =>
+const cop = (n: number) =>
   new Intl.NumberFormat('es-CO', { style: 'currency', currency: 'COP', maximumFractionDigits: 0 }).format(n)
 
-const formatDate = (d: string) =>
-  new Date(d).toLocaleDateString('es-CO', { weekday: 'short', day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' })
+function fmtDay(d: string) {
+  const dt = new Date(d)
+  return {
+    day: dt.toLocaleDateString('es-CO', { day: 'numeric' }),
+    mon: dt.toLocaleDateString('es-CO', { month: 'short' }).toUpperCase(),
+  }
+}
 
-const initials = (name: string | undefined) =>
-  (name ?? '?').split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)
+function initials(name: string) {
+  return name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2)
+}
 
-// ── Component ─────────────────────────────────────────────────────────────────
+type SearchMode = 'email' | 'cc' | 'name'
+type PayMethod = 'cash' | 'card' | 'transfer'
 
-type CustomerState = 'idle' | 'searching' | 'found' | 'not_found' | 'guest'
+// ── Step pill ────────────────────────────────────────────────────────────────
+
+function StepPill({ n, label, step }: { n: number; label: string; step: number }) {
+  const cls = step === n ? 'active' : step > n ? 'done' : ''
+  return (
+    <div className={`pos-step ${cls}`}>
+      <span className="n">{step > n ? <Check size={14} /> : n}</span>
+      {label}
+    </div>
+  )
+}
+
+// ── PayModal ─────────────────────────────────────────────────────────────────
+
+function PayModal({
+  total, payMethod, setPayMethod, cashGiven, setCashGiven, loading, onClose, onConfirm,
+}: {
+  total: number
+  payMethod: PayMethod
+  setPayMethod: (m: PayMethod) => void
+  cashGiven: string
+  setCashGiven: (s: string) => void
+  loading: boolean
+  onClose: () => void
+  onConfirm: () => void
+}) {
+  const given = parseInt((cashGiven || '').replace(/\D/g, ''), 10) || 0
+  const change = given - total
+  const METHODS: { id: PayMethod; nm: string; ds: string; Icon: React.FC<{ size: number }> }[] = [
+    { id: 'cash',     nm: 'Efectivo',           ds: 'Pago en caja',                 Icon: Banknote },
+    { id: 'card',     nm: 'Tarjeta',            ds: 'Datáfono · débito o crédito',  Icon: CreditCard },
+    { id: 'transfer', nm: 'Transferencia / QR', ds: 'Nequi, Bancolombia',           Icon: QrCode },
+  ]
+  return (
+    <div className="pos-modal-bg" onClick={onClose}>
+      <div className="pay-modal" onClick={e => e.stopPropagation()}>
+        <h3>Cobrar venta</h3>
+        <p style={{ color: 'var(--color-text-muted)', fontWeight: 500, fontSize: '0.88rem', marginBottom: 0 }}>
+          Confirma el método de pago para emitir las entradas.
+        </p>
+        <div className="total-big">{cop(total)}</div>
+        <div className="pay-opts">
+          {METHODS.map(m => (
+            <div
+              key={m.id}
+              className={`pay-opt ${payMethod === m.id ? 'sel' : ''}`}
+              onClick={() => setPayMethod(m.id)}
+            >
+              <div className="pi"><m.Icon size={19} /></div>
+              <div className="pt">{m.nm}<div className="ps">{m.ds}</div></div>
+              <div
+                style={{
+                  width: 20, height: 20, borderRadius: '50%', flexShrink: 0,
+                  border: payMethod === m.id ? '6px solid var(--color-primary)' : '2px solid var(--color-border)',
+                }}
+              />
+            </div>
+          ))}
+        </div>
+        {payMethod === 'cash' && (
+          <div className="cash-calc">
+            <div>
+              <label>Efectivo recibido</label>
+              <input value={cashGiven} onChange={e => setCashGiven(e.target.value)} placeholder="$0" style={{ padding: '0.6rem 0.7rem' }} />
+            </div>
+            <div>
+              <label>Cambio</label>
+              <div className="change-out">{given >= total ? cop(change) : '—'}</div>
+            </div>
+          </div>
+        )}
+        <div style={{ display: 'flex', gap: '0.7rem' }}>
+          <button className="btn btn-ghost btn-lg" onClick={onClose} disabled={loading}>Cancelar</button>
+          <button
+            className="btn btn-cta btn-lg"
+            style={{ flex: 1 }}
+            disabled={(payMethod === 'cash' && given < total) || loading}
+            onClick={onConfirm}
+          >
+            {loading
+              ? <span className="spinner" style={{ width: 18, height: 18, borderWidth: 2 }} />
+              : <><Check size={18} /> Confirmar pago</>
+            }
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── CartRail ──────────────────────────────────────────────────────────────────
+
+function CartRail({
+  customer, event, items, totalQty, subtotal, setStep, onPay,
+}: {
+  customer: Customer | null
+  event: Event | null
+  items: CartItem[]
+  totalQty: number
+  subtotal: number
+  setStep: (n: number) => void
+  onPay: () => void
+}) {
+  return (
+    <div className="pos-rail">
+      <div className="rail-title">Venta actual</div>
+
+      {customer
+        ? (
+          <div className="rail-cust">
+            <div className="av ph" style={{ fontSize: '0.8rem', fontWeight: 700 }}>
+              {customer.id === 'walk' ? <User size={18} /> : initials(customer.name)}
+            </div>
+            <div style={{ minWidth: 0 }}>
+              <div className="nm">{customer.name}</div>
+              <div className="em">{customer.email}</div>
+            </div>
+            <button className="change" onClick={e => { e.preventDefault(); setStep(1) }}>
+              Cambiar
+            </button>
+          </div>
+        )
+        : (
+          <div className="rail-cust" style={{ color: 'var(--color-text-muted)' }}>
+            <div className="av ph" style={{ background: 'var(--color-border)' }}><User size={18} /></div>
+            <div>
+              <div className="nm" style={{ color: 'var(--color-text-muted)' }}>Sin cliente</div>
+              <div className="em">Selecciona en el paso 1</div>
+            </div>
+          </div>
+        )
+      }
+
+      {event && (
+        <div className="rail-event">
+          <Music size={16} style={{ color: 'var(--color-primary)', flexShrink: 0 }} />
+          {event.name}
+        </div>
+      )}
+
+      <div className="rail-items">
+        {items.length > 0
+          ? items.map(i => (
+            <div key={i.id} className="rail-item">
+              <div className="ri-l">
+                <div className="n">{i.name}</div>
+                <div className="q">{i.n} × {cop(i.price)}</div>
+              </div>
+              <div className="ri-r">{cop(i.price * i.n)}</div>
+            </div>
+          ))
+          : (
+            <div className="rail-empty">
+              <ShoppingCart size={40} />
+              <p style={{ fontSize: '0.85rem', maxWidth: 200 }}>
+                {event ? 'Agrega boletas para continuar' : 'La venta aparecerá aquí'}
+              </p>
+            </div>
+          )
+        }
+      </div>
+
+      <div className="rail-totals">
+        <div className="rail-trow">
+          <span>Boletas ({totalQty})</span>
+          <span>{cop(subtotal)}</span>
+        </div>
+        <div className="rail-trow">
+          <span>Cargo en taquilla</span>
+          <span>Sin cargo</span>
+        </div>
+        <div className="rail-trow grand">
+          <span>Total</span>
+          <span className="v">{cop(subtotal)}</span>
+        </div>
+        <button
+          className="btn btn-cta btn-lg btn-block"
+          style={{ marginTop: '1.1rem' }}
+          disabled={items.length === 0 || !customer}
+          onClick={onPay}
+        >
+          <Banknote size={18} /> Cobrar {cop(subtotal)}
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
 
 export default function SaleForm() {
   const { user, logout } = useAuth()
   const navigate = useNavigate()
+  const { theme, toggle: toggleTheme } = useTheme()
 
-  // Customer
-  const [query, setQuery]               = useState('')
-  const [customerState, setCustomerState] = useState<CustomerState>('idle')
-  const [foundCustomer, setFoundCustomer] = useState<Customer | null>(null)
-  const [guestName, setGuestName]       = useState('')
-  const [guestEmail, setGuestEmail]     = useState('')
-  const searchTimerRef                  = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const [step, setStep] = useState(1)
 
-  // Sale config
-  const [events, setEvents]               = useState<Event[]>([])
+  // Step 1 — customer
+  const [searchMode, setSearchMode] = useState<SearchMode>('email')
+  const [query, setQuery] = useState('')
+  const [searching, setSearching] = useState(false)
+  const [searchResults, setSearchResults] = useState<Customer[]>([])
+  const [customer, setCustomer] = useState<Customer | null>(null)
+  const searchTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+
+  // Step 2 — event
+  const [events, setEvents] = useState<Event[]>([])
   const [eventsLoading, setEventsLoading] = useState(true)
-  const [selectedEvent, setSelectedEvent] = useState<Event | null>(null)
-  const [selectedCategory, setSelectedCategory] = useState<Category | null>(null)
-  const [quantity, setQuantity]           = useState(1)
+  const [event, setEvent] = useState<Event | null>(null)
 
-  // Submission
+  // Step 3 — categories
+  const [qty, setQty] = useState<Record<string, number>>({})
+
+  // Payment
+  const [payOpen, setPayOpen] = useState(false)
+  const [payMethod, setPayMethod] = useState<PayMethod>('cash')
+  const [cashGiven, setCashGiven] = useState('')
   const [saleLoading, setSaleLoading] = useState(false)
-  const [saleError, setSaleError]     = useState('')
+  const [saleError, setSaleError] = useState('')
 
-  // Responsive
-  const [isMobile, setIsMobile] = useState(window.innerWidth < 768)
-  useEffect(() => {
-    const handler = () => setIsMobile(window.innerWidth < 768)
-    window.addEventListener('resize', handler)
-    return () => window.removeEventListener('resize', handler)
-  }, [])
+  // Derived
+  const items: CartItem[] = event
+    ? event.categories.filter(c => (qty[c.id] ?? 0) > 0).map(c => ({ ...c, n: qty[c.id] }))
+    : []
+  const subtotal = items.reduce((s, i) => s + i.price * i.n, 0)
+  const totalQty = items.reduce((s, i) => s + i.n, 0)
+
+  // Real-time availability
+  const wsBaseUrl = (import.meta.env.VITE_WS_URL as string | undefined) ?? null
+
+  useAvailability(wsBaseUrl, useCallback((eventId: string, categoryId: string, available: number) => {
+    setEvents(prev => prev.map(ev =>
+      ev.id !== eventId ? ev : {
+        ...ev,
+        categories: ev.categories.map(c => c.id === categoryId ? { ...c, available } : c),
+      }
+    ))
+    setEvent(prev =>
+      !prev || prev.id !== eventId ? prev : {
+        ...prev,
+        categories: prev.categories.map(c => c.id === categoryId ? { ...c, available } : c),
+      }
+    )
+  }, []))
+
+  // Seller broadcast toasts
+  const { toasts, dismiss } = useNotifications(wsBaseUrl, user?.id ?? null)
 
   // Load events
   useEffect(() => {
-    const load = async () => {
-      try {
-        const res = await api.get<any>('/events')
+    api.get<any>('/events')
+      .then(res => {
         const raw: any[] = res?.data?.events ?? res?.events ?? (Array.isArray(res) ? res : [])
-        const mapped: Event[] = raw.map((e: any) => ({
-          id: String(e.id).trim(),
+        setEvents(raw.map((e: any) => ({
+          id: String(e.id),
           name: e.title ?? e.name ?? '',
           date: e.date ?? e.eventDate ?? '',
           venue: e.venue,
+          city: e.city,
+          image: e.image ?? e.imageUrl,
           categories: (e.categories ?? e.ticketCategories ?? []).map((c: any) => ({
-            id: String(c.id).trim(),
+            id: String(c.id),
             name: c.name,
             price: c.price,
             available: c.available ?? c.availableCapacity ?? 0,
           })),
-        }))
-        setEvents(mapped)
-      } catch {
-        setEvents([])
-      } finally {
-        setEventsLoading(false)
-      }
-    }
-    load()
+        })))
+      })
+      .catch(() => setEvents([]))
+      .finally(() => setEventsLoading(false))
   }, [])
 
-  // Customer search — debounced
-  const performSearch = useCallback(async (q: string) => {
-    setCustomerState('searching')
+  // Customer search
+  const doSearch = useCallback(async (q: string) => {
+    setSearching(true)
     try {
       const res = await api.get<any>(`/users/search?q=${encodeURIComponent(q)}`)
       const raw = res?.data ?? res
       if (raw && raw.id) {
-        setFoundCustomer({ id: String(raw.id).trim(), name: raw.name ?? raw.fullName ?? '', email: raw.email })
-        setCustomerState('found')
+        setSearchResults([{
+          id: String(raw.id),
+          name: raw.name ?? raw.fullName ?? '',
+          email: raw.email,
+          cc: raw.cedula ?? raw.cc,
+          city: raw.city,
+        }])
       } else {
-        setCustomerState('not_found')
+        setSearchResults([])
       }
     } catch {
-      setCustomerState('not_found')
+      setSearchResults([])
+    } finally {
+      setSearching(false)
     }
   }, [])
 
   useEffect(() => {
-    if (query.trim().length < 3) return
-    clearTimeout(searchTimerRef.current)
-    searchTimerRef.current = setTimeout(() => performSearch(query.trim()), 400)
-    return () => clearTimeout(searchTimerRef.current)
-  }, [query, performSearch])
+    if (query.trim().length < 3) { setSearchResults([]); return }
+    clearTimeout(searchTimer.current)
+    searchTimer.current = setTimeout(() => doSearch(query.trim()), 400)
+    return () => clearTimeout(searchTimer.current)
+  }, [query, doSearch])
 
-  const clearCustomer = () => {
-    setQuery('')
-    setFoundCustomer(null)
-    setGuestName('')
-    setGuestEmail('')
-    setCustomerState('idle')
+  const pickCustomer = (c: Customer) => { setCustomer(c); setStep(2) }
+  const clearCustomer = () => { setQuery(''); setSearchResults([]); setCustomer(null) }
+  const pickEvent = (e: Event) => { setEvent(e); setQty({}); setStep(3) }
+
+  const changeQty = (catId: string, delta: number, max: number) => {
+    setQty(prev => {
+      const cur = prev[catId] ?? 0
+      const next = Math.max(0, Math.min(max, cur + delta))
+      return { ...prev, [catId]: next }
+    })
   }
 
-  const handleEventChange = (eventId: string) => {
-    const ev = events.find(e => e.id === eventId) ?? null
-    setSelectedEvent(ev)
-    setSelectedCategory(null)
-    setQuantity(1)
-  }
-
-  // Derived state
-  const customerReady =
-    customerState === 'found' ||
-    (customerState === 'guest' && guestName.trim().length > 0)
-
-  const canSell = customerReady && selectedEvent !== null && selectedCategory !== null
-
-  const total = selectedCategory ? selectedCategory.price * quantity : 0
-
-  // Submit sale
-  const handleSell = async () => {
-    if (!canSell || !selectedEvent || !selectedCategory) return
+  const handleConfirm = async () => {
+    if (!customer || !event || items.length === 0) return
     setSaleLoading(true)
     setSaleError('')
     try {
-      const payload = {
-        eventId: selectedEvent.id,
-        categoryId: selectedCategory.id,
-        quantity,
-        seatId: null,
-        ...(customerState === 'found' && foundCustomer
-          ? { buyerUserId: foundCustomer.id, buyerName: foundCustomer.name, buyerEmail: foundCustomer.email }
-          : {
-              buyerName: guestName.trim(),
-              ...(guestEmail.trim() ? { buyerEmail: guestEmail.trim() } : {}),
-            }),
+      const ticketIds: string[] = []
+      for (const item of items) {
+        const payload: any = {
+          eventId: event.id,
+          categoryId: item.id,
+          quantity: item.n,
+          seatId: null,
+          ...(customer.id === 'walk'
+            ? { buyerName: 'Al portador' }
+            : { buyerUserId: customer.id, buyerName: customer.name, buyerEmail: customer.email }),
+        }
+        const res = await api.post<any>('/tickets/presential', payload)
+        ticketIds.push(res?.data?.id ?? res?.id ?? '')
       }
-
-      const res = await api.post<any>('/tickets/presential', payload)
-      const ticketId = res?.data?.id ?? res?.id ?? ''
-
+      setPayOpen(false)
       navigate('/confirmation', {
         state: {
-          ticket_id: ticketId,
-          customer_name: customerState === 'found' ? foundCustomer!.name : guestName.trim(),
-          customer_email: customerState === 'found'
-            ? foundCustomer!.email
-            : (guestEmail.trim() || undefined),
-          event_name: selectedEvent.name,
-          event_date: selectedEvent.date,
-          category_name: selectedCategory.name,
-          quantity,
-          total,
+          ticket_ids: ticketIds,
+          customer_name: customer.id === 'walk' ? 'Al portador' : customer.name,
+          customer_email: customer.id === 'walk' ? undefined : customer.email,
+          event_name: event.name,
+          event_date: event.date,
+          items: items.map(i => ({ category_name: i.name, quantity: i.n, unit_price: i.price })),
+          total: subtotal,
         },
       })
     } catch (err) {
@@ -199,449 +391,270 @@ export default function SaleForm() {
     }
   }
 
-  // ── Render ────────────────────────────────────────────────────────────────
+  const placeholders: Record<SearchMode, string> = {
+    email: 'correo@ejemplo.com',
+    cc: 'Número de cédula',
+    name: 'Nombre del cliente',
+  }
 
   return (
-    <div style={{ minHeight: '100dvh', display: 'flex', flexDirection: 'column', background: 'var(--color-bg)' }}>
-
-      {/* ── Header ── */}
-      <header style={{
-        background: 'rgba(15, 14, 24, 0.96)',
-        backdropFilter: 'blur(16px)', WebkitBackdropFilter: 'blur(16px)',
-        borderBottom: '1px solid var(--glass-border)',
-        padding: '0.875rem 1.5rem',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        position: 'sticky', top: 0, zIndex: 10,
-        boxShadow: '0 4px 24px rgba(0,0,0,0.4)',
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
-          <Zap size={20} color="var(--color-cta)" fill="var(--color-cta)" />
-          <span style={{
-            fontFamily: 'var(--font-heading)', fontSize: '1.25rem',
-            color: 'var(--color-primary-light)',
-            textShadow: '0 0 20px rgba(192, 132, 252, 0.45)',
-          }}>NovaPass</span>
-          <span style={{
-            fontSize: '0.75rem', color: 'var(--color-cta)', fontWeight: 600,
-            background: 'rgba(245,158,11,0.1)', border: '1px solid rgba(245,158,11,0.25)',
-            borderRadius: '999px', padding: '0.2rem 0.625rem',
-          }}>
-            Punto de Venta
-          </span>
+    <div className="pos">
+      {/* Top bar */}
+      <header className="pos-top">
+        <div className="pos-brand">
+          <div className="mark"><Star size={18} fill="currentColor" strokeWidth={0} /></div>
+          Nova<b>Pass</b>
+          <span className="sub">Taquilla</span>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+        <div className="pos-top-right">
+          <button className="theme-toggle" onClick={toggleTheme} aria-label="Cambiar tema">
+            {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+          </button>
           {user && (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <div style={{
-                width: 30, height: 30, borderRadius: '50%',
-                background: 'rgba(147,51,234,0.2)', border: '1px solid rgba(147,51,234,0.4)',
+            <div className="pos-cashier">
+              <div className="av" style={{
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: '0.6875rem', fontWeight: 700, color: 'var(--color-primary-light)',
+                background: 'linear-gradient(135deg, #7C3AED, #9333EA)',
+                fontWeight: 700, fontSize: '0.78rem', color: '#fff', borderRadius: 11,
               }}>
                 {initials(user.name)}
               </div>
-              {!isMobile && (
-                <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>
-                  {user.name}
-                </span>
-              )}
+              <div>
+                <div style={{ fontWeight: 700, fontSize: '0.85rem' }}>{user.name}</div>
+                <div style={{ fontSize: '0.72rem', color: 'var(--color-text-muted)' }}>Cajero/a</div>
+              </div>
             </div>
           )}
-          <button onClick={logout} className="btn btn-outline btn-sm" style={{ gap: '0.375rem' }}>
-            <LogOut size={13} /> Salir
+          <button onClick={logout} className="btn btn-ghost btn-sm" style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+            <LogOut size={14} /> Salir
           </button>
         </div>
       </header>
 
-      {/* ── Body ── */}
-      <div style={{
-        flex: 1,
-        display: 'grid',
-        gridTemplateColumns: isMobile ? '1fr' : '1fr 1fr',
-        gap: '1.5rem',
-        padding: '1.5rem',
-        alignItems: 'start',
-        maxWidth: 1200,
-        margin: '0 auto',
-        width: '100%',
-      }}>
-
-        {/* ── LEFT: Customer ── */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
-            <Users size={18} color="var(--color-primary-light)" />
-            <h2 style={{ fontSize: '1.125rem', fontFamily: 'var(--font-heading)' }}>Cliente</h2>
+      {/* Workspace */}
+      <div className="pos-work">
+        <div className="pos-main">
+          {/* Step pills */}
+          <div className="pos-steps">
+            <StepPill n={1} label="Cliente" step={step} />
+            <div className="pos-step-line" />
+            <StepPill n={2} label="Evento" step={step} />
+            <div className="pos-step-line" />
+            <StepPill n={3} label="Boletas" step={step} />
           </div>
 
-          {/* Search bar */}
-          {(customerState === 'idle' || customerState === 'searching' || customerState === 'not_found') && (
-            <div style={{ position: 'relative' }}>
-              <div style={{
-                position: 'absolute', left: '0.875rem', top: '50%', transform: 'translateY(-50%)',
-                pointerEvents: 'none',
-              }}>
-                {customerState === 'searching'
-                  ? <span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} />
-                  : <Search size={16} color="var(--color-text-muted)" />
-                }
-              </div>
-              <input
-                type="text"
-                value={query}
-                onChange={e => { setQuery(e.target.value); setCustomerState('idle') }}
-                placeholder="Buscar por correo o cédula..."
-                style={{ paddingLeft: '2.5rem', paddingRight: query ? '2.5rem' : '1rem' }}
-                autoFocus
-              />
-              {query && (
-                <button
-                  onClick={clearCustomer}
-                  style={{
-                    position: 'absolute', right: '0.875rem', top: '50%', transform: 'translateY(-50%)',
-                    background: 'none', border: 'none', color: 'var(--color-text-muted)',
-                    padding: '0.25rem', cursor: 'pointer', display: 'flex',
-                  }}
-                >
-                  <X size={14} />
-                </button>
-              )}
-            </div>
-          )}
+          {/* ── Step 1: Cliente ── */}
+          {step === 1 && (
+            <>
+              <h2 className="pos-h">Buscar cliente</h2>
+              <p className="pos-sub">Ubica al cliente por correo o cédula para asociar la compra a su cuenta.</p>
 
-          {/* Idle hint */}
-          {customerState === 'idle' && !query && (
-            <div style={{
-              padding: '1.5rem', borderRadius: 'var(--radius-md)',
-              border: '1px dashed var(--glass-border)',
-              display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem',
-              color: 'var(--color-text-muted)', textAlign: 'center',
-            }}>
-              <User size={32} color="var(--color-text-muted)" style={{ opacity: 0.5 }} />
-              <div>
-                <div style={{ fontSize: '0.9375rem', fontWeight: 500, marginBottom: '0.25rem' }}>
-                  Busca al cliente
-                </div>
-                <div style={{ fontSize: '0.8125rem', opacity: 0.7 }}>
-                  Ingresa correo o número de cédula (mín. 3 caracteres)
-                </div>
-              </div>
-            </div>
-          )}
-
-          {/* Not found */}
-          {customerState === 'not_found' && (
-            <div style={{
-              padding: '1.25rem', borderRadius: 'var(--radius-md)',
-              background: 'rgba(248,113,113,0.06)', border: '1px solid rgba(248,113,113,0.2)',
-              display: 'flex', flexDirection: 'column', gap: '1rem',
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: '0.625rem' }}>
-                <UserX size={18} color="#F87171" />
-                <span style={{ fontSize: '0.9375rem', fontWeight: 600, color: '#F87171' }}>
-                  No se encontró cliente
-                </span>
-              </div>
-              <p style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)' }}>
-                ¿Deseas registrar la venta como invitado?
-              </p>
-              <button
-                onClick={() => setCustomerState('guest')}
-                className="btn btn-outline btn-sm"
-                style={{ width: 'auto', alignSelf: 'flex-start' }}
-              >
-                <Users size={14} /> Continuar como invitado
-              </button>
-            </div>
-          )}
-
-          {/* Found customer */}
-          {customerState === 'found' && foundCustomer && (
-            <div style={{
-              padding: '1.25rem', borderRadius: 'var(--radius-md)',
-              background: 'rgba(34,197,94,0.06)', border: '1px solid rgba(34,197,94,0.25)',
-              display: 'flex', alignItems: 'center', gap: '1rem',
-            }}>
-              <div style={{
-                width: 48, height: 48, borderRadius: '50%', flexShrink: 0,
-                background: 'rgba(147,51,234,0.15)', border: '2px solid rgba(147,51,234,0.4)',
-                display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontFamily: 'var(--font-heading)', fontSize: '1.0625rem',
-                color: 'var(--color-primary-light)',
-              }}>
-                {initials(foundCustomer.name)}
-              </div>
-              <div style={{ flex: 1, minWidth: 0 }}>
-                <div style={{ fontWeight: 700, fontSize: '1rem', marginBottom: '0.125rem' }}>
-                  {foundCustomer.name}
-                </div>
-                <div style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                  {foundCustomer.email}
-                </div>
-                <span className="badge badge-success" style={{ marginTop: '0.375rem' }}>
-                  Cliente seleccionado
-                </span>
-              </div>
-              <button
-                onClick={clearCustomer}
-                style={{
-                  background: 'rgba(248,113,113,0.1)', border: '1px solid rgba(248,113,113,0.2)',
-                  borderRadius: 'var(--radius-sm)', padding: '0.375rem',
-                  color: '#F87171', cursor: 'pointer', flexShrink: 0, display: 'flex',
-                }}
-              >
-                <X size={14} />
-              </button>
-            </div>
-          )}
-
-          {/* Guest form */}
-          {customerState === 'guest' && (
-            <div style={{
-              padding: '1.25rem', borderRadius: 'var(--radius-md)',
-              background: 'rgba(245,158,11,0.06)', border: '1px solid rgba(245,158,11,0.2)',
-              display: 'flex', flexDirection: 'column', gap: '1rem',
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                  <Users size={16} color="var(--color-cta)" />
-                  <span style={{ fontSize: '0.9375rem', fontWeight: 600, color: 'var(--color-cta)' }}>
-                    Venta como invitado
-                  </span>
-                </div>
-                <button
-                  onClick={clearCustomer}
-                  style={{
-                    background: 'none', border: 'none', color: 'var(--color-text-muted)',
-                    cursor: 'pointer', display: 'flex', padding: '0.25rem',
-                  }}
-                >
-                  <X size={14} />
-                </button>
-              </div>
-              <div>
-                <label htmlFor="guest-name">Nombre <span style={{ color: '#F87171' }}>*</span></label>
-                <input
-                  id="guest-name"
-                  type="text"
-                  value={guestName}
-                  onChange={e => setGuestName(e.target.value)}
-                  placeholder="Nombre completo del cliente"
-                  autoFocus
-                />
-              </div>
-              <div>
-                <label htmlFor="guest-email">Correo electrónico (opcional)</label>
-                <input
-                  id="guest-email"
-                  type="email"
-                  value={guestEmail}
-                  onChange={e => setGuestEmail(e.target.value)}
-                  placeholder="para enviar la boleta"
-                />
-              </div>
-            </div>
-          )}
-        </div>
-
-        {/* ── RIGHT: Sale config ── */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.25rem' }}>
-            <ShoppingCart size={18} color="var(--color-primary-light)" />
-            <h2 style={{ fontSize: '1.125rem', fontFamily: 'var(--font-heading)' }}>Configurar Venta</h2>
-          </div>
-
-          {/* Event selector */}
-          <div>
-            <label htmlFor="event-select">Evento</label>
-            <div style={{ position: 'relative' }}>
-              <select
-                id="event-select"
-                value={selectedEvent?.id ?? ''}
-                onChange={e => handleEventChange(e.target.value)}
-                disabled={eventsLoading}
-                style={{ paddingRight: '2.5rem', appearance: 'none', cursor: 'pointer' }}
-              >
-                <option value="">
-                  {eventsLoading ? 'Cargando eventos...' : '— Selecciona un evento —'}
-                </option>
-                {events.map(ev => (
-                  <option key={ev.id} value={ev.id}>
-                    {ev.name} · {formatDate(ev.date)}
-                  </option>
+              <div className="pos-search-modes">
+                {(['email', 'cc', 'name'] as SearchMode[]).map(m => (
+                  <button key={m} className={searchMode === m ? 'on' : ''} onClick={() => setSearchMode(m)}>
+                    {m === 'email' ? 'Correo' : m === 'cc' ? 'Cédula' : 'Nombre'}
+                  </button>
                 ))}
-              </select>
-              <div style={{
-                position: 'absolute', right: '0.875rem', top: '50%', transform: 'translateY(-50%)',
-                pointerEvents: 'none',
-              }}>
-                {eventsLoading
-                  ? <span className="spinner" style={{ width: 16, height: 16, borderWidth: 2 }} />
-                  : <ChevronDown size={16} color="var(--color-text-muted)" />
-                }
               </div>
-            </div>
-          </div>
 
-          {/* Category cards */}
-          {selectedEvent && (
-            <div>
-              <label style={{ marginBottom: '0.625rem' }}>Categoría</label>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                {selectedEvent.categories.map(cat => {
-                  const active = selectedCategory?.id === cat.id
+              <div className="pos-search">
+                <div className="field">
+                  {searching
+                    ? <span className="spinner" style={{ position: 'absolute', left: '1rem', top: '50%', transform: 'translateY(-50%)', width: 16, height: 16, borderWidth: 2 }} />
+                    : <Search size={19} />
+                  }
+                  <input
+                    value={query}
+                    onChange={e => setQuery(e.target.value)}
+                    placeholder={placeholders[searchMode]}
+                    autoFocus
+                  />
+                </div>
+                {query && (
+                  <button className="btn btn-ghost btn-sm" onClick={() => setQuery('')}>
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+
+              <div className="cust-list" style={{ marginTop: '1.2rem' }}>
+                <div
+                  className="cust-card cust-walkin"
+                  onClick={() => pickCustomer({ id: 'walk', name: 'Venta sin registro', email: 'Cliente ocasional' })}
+                >
+                  <div className="av"><User size={22} /></div>
+                  <div className="info">
+                    <div className="nm">Venta sin registro</div>
+                    <div className="meta"><span>Cliente ocasional — la entrada se emite al portador</span></div>
+                  </div>
+                  <div className="pick"><Check size={18} /></div>
+                </div>
+
+                {searchResults.map(c => (
+                  <div key={c.id} className="cust-card" onClick={() => pickCustomer(c)}>
+                    <div className="av" style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'center',
+                      background: 'linear-gradient(135deg, #7C3AED, #9333EA)',
+                      fontWeight: 700, color: '#fff', fontSize: '0.9rem',
+                    }}>
+                      {initials(c.name)}
+                    </div>
+                    <div className="info">
+                      <div className="nm">{c.name}</div>
+                      <div className="meta">
+                        <span>{c.email}</span>
+                        {c.cc && <span>CC {c.cc}</span>}
+                        {c.city && <span><MapPin size={13} />{c.city}</span>}
+                      </div>
+                    </div>
+                    <div className="pick"><Check size={18} /></div>
+                  </div>
+                ))}
+
+                {query.trim().length >= 3 && !searching && searchResults.length === 0 && (
+                  <div className="pos-empty">
+                    <Search size={32} />
+                    <p>Sin resultados para "{query}". Usa "Venta sin registro" para continuar.</p>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+
+          {/* ── Step 2: Evento ── */}
+          {step === 2 && (
+            <>
+              <h2 className="pos-h">Selecciona el evento</h2>
+              <p className="pos-sub">Eventos con venta activa en taquilla.</p>
+
+              {eventsLoading && (
+                <div className="pos-empty">
+                  <span className="spinner" style={{ width: 32, height: 32, borderWidth: 3, margin: '0 auto' }} />
+                </div>
+              )}
+
+              <div className="pos-evgrid">
+                {events.map(e => {
+                  const d = fmtDay(e.date)
                   return (
-                    <button
-                      key={cat.id}
-                      onClick={() => setSelectedCategory(cat)}
-                      style={{
-                        padding: '0.875rem 1rem',
-                        borderRadius: 'var(--radius-md)',
-                        background: active ? 'rgba(147,51,234,0.14)' : 'var(--glass-bg)',
-                        border: `2px solid ${active ? 'rgba(147,51,234,0.6)' : 'var(--glass-border)'}`,
-                        cursor: 'pointer',
-                        transition: 'all 200ms ease',
-                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
-                        boxShadow: active ? '0 0 16px rgba(147,51,234,0.2)' : 'none',
-                        textAlign: 'left',
-                        width: '100%',
-                      }}
+                    <div
+                      key={e.id}
+                      className={`pos-evcard ${event?.id === e.id ? 'sel' : ''}`}
+                      onClick={() => pickEvent(e)}
                     >
-                      <div>
-                        <div style={{ fontWeight: 700, fontSize: '0.9375rem', color: 'var(--color-text)' }}>
-                          {cat.name}
-                        </div>
-                        <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '0.125rem' }}>
-                          {cat.available} disponibles
+                      <div
+                        className="img"
+                        style={{
+                          backgroundImage: e.image ? `url(${e.image})` : undefined,
+                          background: !e.image ? 'linear-gradient(135deg, var(--color-primary-dark), var(--color-primary))' : undefined,
+                        }}
+                      >
+                        <div className="date">
+                          <b>{d.day}</b>
+                          <span>{d.mon}</span>
                         </div>
                       </div>
-                      <div style={{
-                        fontFamily: 'var(--font-heading)', fontSize: '1.125rem',
-                        color: active ? 'var(--color-cta)' : 'var(--color-primary-light)',
-                        transition: 'color 200ms ease',
-                      }}>
-                        {formatPrice(cat.price)}
+                      <div className="body">
+                        <h4>{e.name}</h4>
+                        {(e.venue || e.city) && (
+                          <div className="mt">
+                            <MapPin size={13} />
+                            {[e.venue, e.city].filter(Boolean).join(' · ')}
+                          </div>
+                        )}
                       </div>
-                    </button>
+                    </div>
                   )
                 })}
               </div>
-            </div>
+
+              {!eventsLoading && events.length === 0 && (
+                <div className="pos-empty">
+                  <Music size={38} />
+                  <p>No hay eventos activos en este momento</p>
+                </div>
+              )}
+            </>
           )}
 
-          {/* Quantity */}
-          {selectedCategory && (
-            <div>
-              <label>Cantidad</label>
-              <div style={{
-                display: 'flex', alignItems: 'center', gap: '1rem',
-                background: 'var(--glass-bg)', border: '1px solid var(--glass-border)',
-                borderRadius: 'var(--radius-md)', padding: '0.75rem 1rem',
-              }}>
-                <button
-                  onClick={() => setQuantity(q => Math.max(1, q - 1))}
-                  disabled={quantity <= 1}
-                  style={{
-                    width: 36, height: 36, borderRadius: 'var(--radius-sm)',
-                    background: quantity <= 1 ? 'rgba(255,255,255,0.03)' : 'rgba(147,51,234,0.15)',
-                    border: `1px solid ${quantity <= 1 ? 'var(--glass-border)' : 'rgba(147,51,234,0.4)'}`,
-                    color: quantity <= 1 ? 'var(--color-text-muted)' : 'var(--color-primary-light)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    cursor: quantity <= 1 ? 'not-allowed' : 'pointer',
-                    transition: 'all 150ms ease', flexShrink: 0,
-                  }}
-                >
-                  <Minus size={16} />
-                </button>
-                <span style={{
-                  flex: 1, textAlign: 'center',
-                  fontFamily: 'var(--font-heading)', fontSize: '2rem',
-                  color: 'var(--color-text)', lineHeight: 1,
-                }}>
-                  {quantity}
-                </span>
-                <button
-                  onClick={() => setQuantity(q => Math.min(10, q + 1))}
-                  disabled={quantity >= 10}
-                  style={{
-                    width: 36, height: 36, borderRadius: 'var(--radius-sm)',
-                    background: quantity >= 10 ? 'rgba(255,255,255,0.03)' : 'rgba(147,51,234,0.15)',
-                    border: `1px solid ${quantity >= 10 ? 'var(--glass-border)' : 'rgba(147,51,234,0.4)'}`,
-                    color: quantity >= 10 ? 'var(--color-text-muted)' : 'var(--color-primary-light)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    cursor: quantity >= 10 ? 'not-allowed' : 'pointer',
-                    transition: 'all 150ms ease', flexShrink: 0,
-                  }}
-                >
-                  <Plus size={16} />
-                </button>
-              </div>
-              <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', marginTop: '0.375rem' }}>
-                Máximo 10 boletas por transacción
-              </div>
-            </div>
-          )}
+          {/* ── Step 3: Boletas ── */}
+          {step === 3 && event && (
+            <>
+              <h2 className="pos-h">Categorías — {event.name}</h2>
+              <p className="pos-sub">Selecciona la cantidad por categoría. Disponibilidad en tiempo real.</p>
 
-          {/* Order summary */}
-          {selectedCategory && (
-            <div style={{
-              background: 'rgba(245,158,11,0.05)',
-              border: '1px solid rgba(245,158,11,0.2)',
-              borderRadius: 'var(--radius-md)', padding: '1.25rem',
-              display: 'flex', flexDirection: 'column', gap: '0.625rem',
-            }}>
-              <div style={{ fontSize: '0.875rem', fontWeight: 600, color: 'var(--color-text-muted)', marginBottom: '0.25rem' }}>
-                Resumen
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.9375rem' }}>
-                <span style={{ color: 'var(--color-text-muted)' }}>
-                  {selectedCategory.name} × {quantity}
-                </span>
-                <span>{formatPrice(selectedCategory.price)} c/u</span>
-              </div>
-              <hr style={{ border: 'none', borderTop: '1px solid rgba(245,158,11,0.15)' }} />
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'baseline' }}>
-                <span style={{ fontWeight: 700, fontSize: '1rem' }}>Total</span>
-                <span style={{
-                  fontFamily: 'var(--font-heading)', fontSize: '1.625rem',
-                  color: 'var(--color-cta)',
-                  textShadow: '0 0 16px rgba(245,158,11,0.35)',
-                }}>
-                  {formatPrice(total)}
-                </span>
-              </div>
-            </div>
-          )}
+              {saleError && (
+                <div className="alert-error" style={{ marginBottom: '1rem' }}>{saleError}</div>
+              )}
 
-          {/* Error */}
-          {saleError && (
-            <div className="alert-error" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <AlertCircle size={15} /> {saleError}
-            </div>
-          )}
-
-          {/* Sell button */}
-          <button
-            className="btn btn-cta btn-lg"
-            onClick={handleSell}
-            disabled={!canSell || saleLoading}
-            style={{ marginTop: '0.25rem' }}
-          >
-            {saleLoading
-              ? <span className="spinner" style={{ width: 20, height: 20, borderWidth: 2, borderTopColor: '#0A0A0F' }} />
-              : <><ShoppingCart size={20} /> Realizar Venta</>
-            }
-          </button>
-
-          {!canSell && (
-            <p style={{ textAlign: 'center', fontSize: '0.8125rem', color: 'var(--color-text-muted)', marginTop: '-0.5rem' }}>
-              {!customerReady
-                ? 'Selecciona o registra un cliente primero'
-                : !selectedEvent
-                ? 'Selecciona un evento'
-                : 'Selecciona una categoría'}
-            </p>
+              <div className="cat-list">
+                {event.categories.map(c => {
+                  const soldout = c.available === 0
+                  const cur = qty[c.id] ?? 0
+                  return (
+                    <div key={c.id} className={`cat-row ${soldout ? 'soldout' : ''}`}>
+                      <div className="ci"><Ticket size={20} /></div>
+                      <div className="cinfo">
+                        <div className="cn">{c.name}</div>
+                        <div className="ca">{soldout ? 'Agotada' : `${c.available} disponibles`}</div>
+                      </div>
+                      <div className="cprice">{cop(c.price)}</div>
+                      {soldout
+                        ? <span className="badge badge-error">Agotada</span>
+                        : (
+                          <div className="stepper">
+                            <button onClick={() => changeQty(c.id, -1, c.available)} disabled={cur === 0}>
+                              <Minus size={16} />
+                            </button>
+                            <span className="q">{cur}</span>
+                            <button onClick={() => changeQty(c.id, 1, Math.min(c.available, 10))} disabled={cur >= Math.min(c.available, 10)}>
+                              <Plus size={16} />
+                            </button>
+                          </div>
+                        )
+                      }
+                    </div>
+                  )
+                })}
+              </div>
+            </>
           )}
         </div>
+
+        {/* Rail */}
+        <CartRail
+          customer={customer}
+          event={event}
+          items={items}
+          totalQty={totalQty}
+          subtotal={subtotal}
+          setStep={setStep}
+          onPay={() => { setSaleError(''); setPayOpen(true) }}
+        />
+      </div>
+
+      {/* Pay modal */}
+      {payOpen && (
+        <PayModal
+          total={subtotal}
+          payMethod={payMethod}
+          setPayMethod={setPayMethod}
+          cashGiven={cashGiven}
+          setCashGiven={setCashGiven}
+          loading={saleLoading}
+          onClose={() => setPayOpen(false)}
+          onConfirm={handleConfirm}
+        />
+      )}
+
+      {/* Broadcast toasts */}
+      <div className="pos-toasts">
+        {toasts.map(t => (
+          <div key={t.id} className="pos-toast" onClick={() => dismiss(t.id)}>
+            <div className="pt-title">{t.title}</div>
+            <div className="pt-desc">{t.desc}</div>
+          </div>
+        ))}
       </div>
     </div>
   )

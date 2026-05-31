@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { useAuth } from '../context/AuthContext'
-import { LogIn, ShoppingBag, Tag, Zap } from 'lucide-react'
+import { LogIn, ShoppingBag, Tag, Star } from 'lucide-react'
 
 export default function Login() {
   const { login, loading } = useAuth()
@@ -52,11 +52,10 @@ export default function Login() {
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '0.75rem', marginBottom: '2.5rem' }}>
           <div style={{
             display: 'inline-flex', alignItems: 'center', gap: '0.625rem',
-            fontFamily: 'var(--font-heading)', fontSize: '2.25rem',
-            color: 'var(--color-primary-light)',
-            textShadow: '0 0 40px rgba(192, 132, 252, 0.55)',
+            fontFamily: 'var(--font-display)', fontSize: '2.25rem',
+            color: 'var(--color-primary)',
           }}>
-            <Zap size={30} fill="currentColor" />
+            <Star size={30} fill="currentColor" strokeWidth={0} />
             NovaPass
           </div>
           <div style={{
@@ -75,7 +74,7 @@ export default function Login() {
         <div className="card" style={{ padding: '2rem 2rem 1.75rem' }}>
           <h2 style={{
             textAlign: 'center', fontSize: '1.375rem', marginBottom: '1.75rem',
-            fontFamily: 'var(--font-heading)',
+            fontFamily: 'var(--font-display)',
             background: 'linear-gradient(135deg, var(--color-text) 0%, var(--color-primary-light) 100%)',
             WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text',
           }}>
