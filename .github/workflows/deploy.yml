@@ -42,6 +42,7 @@ jobs:
         run: |
           docker build -f Dockerfile \
             --build-arg VITE_API_URL=https://api.estelar.andrescortes.dev/api \
+            --build-arg VITE_WS_URL=https://api.estelar.andrescortes.dev \
             -t ${{ env.IMAGE_TAG }} .
           docker push ${{ env.IMAGE_TAG }}
 
