@@ -28,6 +28,8 @@ self.addEventListener('activate', (event) => {
 })
 
 self.addEventListener('fetch', (event) => {
+  if (!event.request.url.startsWith('http')) return
+
   // API: network-first with offline fallback
   if (event.request.url.includes('/api/')) {
     event.respondWith(networkFirst(event.request))
